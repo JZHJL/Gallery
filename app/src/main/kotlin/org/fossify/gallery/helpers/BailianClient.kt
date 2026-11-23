@@ -12,9 +12,19 @@ class BailianClient(private val prefs: AiPrefs) {
 
     data class TokenUsage(val inputTokens: Int, val outputTokens: Int)
 
+    private var keyIndex = 0
+
     companion object {
         private const val BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         private const val VISION_PROMPT = "请用中文详细描述这张照片：场景、主要对象、人物及其动作、环境与光线氛围。如果画面中有文字、标题、公式、板书、路牌、标签，请逐字转写出来。不超过200字。"
+    }
+
+    private fun currentKey(): String {
+        val keys = prefs.apiKeys
+        if (keys.isEmpty()) {
+            return ""
+        }
+        return keys[keyIndex % keys.size]
     }
 
     fun describeImage(jpegBytes: ByteArray): Pair<String, TokenUsage> {
@@ -72,9 +82,14 @@ class BailianClient(private val prefs: AiPrefs) {
         var lastFailure: Exception? = null
         for (attempt in 0 until 3) {
             try {
-                return postOnce(url, body)
+                return postOnce(url, body, currentKey())
             } catch (e: Exception) {
                 lastFailure = e
+                val message = e.message ?: ""
+                if (message.startsWith("HTTP 429") && prefs.apiKeys.size > 1) {
+                    keyIndex++
+                    continue
+                }
                 if (!isRetryable(e) || attempt == 2) {
                     throw e
                 }
@@ -89,20 +104,17 @@ class BailianClient(private val prefs: AiPrefs) {
             return true
         }
         val message = e.message ?: return false
-        if (message.startsWith("HTTP 429") || message.startsWith("HTTP 5")) {
-            return true
-        }
-        return false
+        return message.startsWith("HTTP 429") || message.startsWith("HTTP 5")
     }
 
-    private fun postOnce(url: String, body: String): JSONObject {
+    private fun postOnce(url: String, body: String, key: String): JSONObject {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
         connection.connectTimeout = 15000
         connection.readTimeout = 45000
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
-        connection.setRequestProperty("Authorization", "Bearer " + prefs.apiKey)
+        connection.setRequestProperty("Authorization", "Bearer " + key)
         connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
         val code = connection.responseCode
