@@ -511,6 +511,7 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
                 R.id.more_apps_from_us -> launchMoreAppsFromUsIntent()
                 R.id.settings -> launchSettings()
                 R.id.about -> launchAbout()
+                R.id.ai_search -> launchAiSearchActivity()
                 else -> return@setOnMenuItemClickListener false
             }
             return@setOnMenuItemClickListener true
@@ -646,6 +647,11 @@ class MainActivity : SimpleActivity(), DirectoryOperationsListener {
         binding.mainMenu.postDelayed({
             binding.mainMenu.closeSearch()
         }, 500)
+    }
+
+    private fun launchAiSearchActivity() {
+        hideKeyboard()
+        startActivity(Intent(this, AiSearchActivity::class.java))
     }
 
     private fun showSortingDialog() {

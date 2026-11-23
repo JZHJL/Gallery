@@ -69,6 +69,10 @@
         android:title="@string/column_count"
         app:showAsAction="ifRoom" />
     <item
+        android:id="@+id/ai_search"
+        android:title="AI 搜索"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/settings"
         android:icon="@drawable/ic_settings_cog_vector"
         android:title="@string/settings"
