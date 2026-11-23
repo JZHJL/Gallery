@@ -1,6 +1,9 @@
 package org.fossify.gallery.activities
 
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
+import android.provider.Settings
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +27,7 @@ import org.fossify.gallery.helpers.AiIndexer
 import org.fossify.gallery.helpers.AiMath
 import org.fossify.gallery.helpers.AiPrefs
 import org.fossify.gallery.helpers.BailianClient
+import org.fossify.gallery.services.FloatingBallService
 
 class AiSearchActivity : SimpleActivity() {
 
@@ -36,6 +40,11 @@ class AiSearchActivity : SimpleActivity() {
 
     @Volatile
     private var indexedCount = 0
+
+    companion object {
+        @Volatile
+        var ballRunning = false
+    }
 
     private val statusTicker = object : Runnable {
         override fun run() {
@@ -123,6 +132,12 @@ class AiSearchActivity : SimpleActivity() {
         stopButton.setTextColor(textColor)
         stopButton.setOnClickListener { AiIndexer.stop() }
         actionRow.addView(stopButton)
+
+        val ballButton = Button(this)
+        ballButton.text = "悬浮球"
+        ballButton.setTextColor(textColor)
+        ballButton.setOnClickListener { toggleFloatingBall() }
+        actionRow.addView(ballButton)
         root.addView(actionRow)
 
         val recycler = RecyclerView(this)
@@ -224,6 +239,24 @@ class AiSearchActivity : SimpleActivity() {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun toggleFloatingBall() {
+        if (!Settings.canDrawOverlays(this)) {
+            toast("请先允许「显示在其他应用上层」")
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + packageName)))
+            return
+        }
+        val serviceIntent = Intent(this, FloatingBallService::class.java)
+        if (ballRunning) {
+            stopService(serviceIntent)
+            ballRunning = false
+            toast("悬浮球已关闭")
+        } else {
+            startService(serviceIntent)
+            ballRunning = true
+            toast("悬浮球已开启，点它就能搜照片")
+        }
     }
 
     private fun showApiKeyDialog() {
