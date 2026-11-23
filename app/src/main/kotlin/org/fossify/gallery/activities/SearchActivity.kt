@@ -14,6 +14,7 @@ import org.fossify.commons.views.MyGridLayoutManager
 import org.fossify.gallery.R
 import org.fossify.gallery.adapters.MediaAdapter
 import org.fossify.gallery.asynctasks.GetMediaAsynctask
+import org.fossify.gallery.databases.AiDatabase
 import org.fossify.gallery.databinding.ActivitySearchBinding
 import org.fossify.gallery.extensions.*
 import org.fossify.gallery.helpers.GridSpacingItemDecoration
@@ -99,6 +100,29 @@ class SearchActivity : SimpleActivity(), MediaOperationsListener {
             try {
                 val filtered = mAllMedia.filter { it is Medium && it.name.contains(text, true) } as ArrayList
                 filtered.sortBy { it is Medium && !it.name.startsWith(text, true) }
+                if (text.length >= 2) {
+                    try {
+                        val aiPaths = AiDatabase.getInstance(applicationContext).aiIndexDao().searchPathsByKeyword("%" + text + "%")
+                        if (aiPaths.isNotEmpty()) {
+                            val present = HashSet<String>()
+                            for (item in filtered) {
+                                val medium = item as? Medium
+                                if (medium != null) {
+                                    present.add(medium.path)
+                                }
+                            }
+                            for (path in aiPaths) {
+                                if (present.contains(path)) {
+                                    continue
+                                }
+                                val matched = mAllMedia.firstOrNull { it is Medium && it.path == path } ?: continue
+                                filtered.add(matched)
+                                present.add(path)
+                            }
+                        }
+                    } catch (ignored: Exception) {
+                    }
+                }
                 val grouped = MediaFetcher(applicationContext).groupMedia(filtered as ArrayList<Medium>, "")
                 runOnUiThread {
                     if (grouped.isEmpty()) {
