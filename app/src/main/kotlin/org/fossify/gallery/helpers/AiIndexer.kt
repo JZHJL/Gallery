@@ -6,8 +6,14 @@ import android.net.Uri
 import android.provider.MediaStore
 import org.fossify.gallery.databases.AiDatabase
 import org.fossify.gallery.databases.AiIndex
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 object AiIndexer {
+
+    private const val CONCURRENCY = 4
+    private const val MAX_SIDE = 768
 
     private data class Target(val uri: String, val path: String, val size: Long)
 
@@ -19,53 +25,66 @@ object AiIndexer {
         AiIndexState.running = true
         val appContext = context.applicationContext
         Thread {
+            var pool: java.util.concurrent.ExecutorService? = null
             try {
                 val dao = AiDatabase.getInstance(appContext).aiIndexDao()
                 val targets = collectImages(appContext, limit)
                 AiIndexState.total = targets.size
                 val client = BailianClient(prefs)
+                val done = AtomicInteger(0)
+                val latch = CountDownLatch(targets.size)
+                pool = Executors.newFixedThreadPool(CONCURRENCY)
                 for (target in targets) {
-                    if (AiIndexState.cancelRequested) {
-                        break
-                    }
-                    try {
-                        if (dao.getByUri(target.uri) != null) {
-                            AiIndexState.indexed++
-                            continue
-                        }
-                        val jpeg = AiImagePrep.loadJpeg(appContext, Uri.parse(target.uri))
-                        if (jpeg == null) {
-                            AiIndexState.indexed++
-                            continue
-                        }
-                        val description = client.describeImage(jpeg).first
-                        if (description.isEmpty()) {
-                            AiIndexState.indexed++
-                            continue
-                        }
-                        val vector = client.embedText(description)
-                        dao.upsert(
-                            AiIndex(
-                                uri = target.uri,
-                                path = target.path,
-                                description = description,
-                                ocrText = description,
-                                vector = AiMath.toBytes(vector),
-                                dim = vector.size,
-                                model = prefs.visionModel,
-                                sizeBytes = target.size,
-                                updatedAt = System.currentTimeMillis()
+                    pool.execute {
+                        try {
+                            if (AiIndexState.cancelRequested) {
+                                done.incrementAndGet()
+                                return@execute
+                            }
+                            if (dao.getByUri(target.uri) != null) {
+                                done.incrementAndGet()
+                                return@execute
+                            }
+                            val jpeg = AiImagePrep.loadJpeg(appContext, Uri.parse(target.uri), MAX_SIDE)
+                            if (jpeg == null) {
+                                done.incrementAndGet()
+                                return@execute
+                            }
+                            val description = client.describeImage(jpeg).first
+                            if (description.isEmpty()) {
+                                done.incrementAndGet()
+                                return@execute
+                            }
+                            val vector = client.embedText(description)
+                            dao.upsert(
+                                AiIndex(
+                                    uri = target.uri,
+                                    path = target.path,
+                                    description = description,
+                                    ocrText = description,
+                                    vector = AiMath.toBytes(vector),
+                                    dim = vector.size,
+                                    model = prefs.visionModel,
+                                    sizeBytes = target.size,
+                                    updatedAt = System.currentTimeMillis()
+                                )
                             )
-                        )
-                        AiIndexState.successCount++
-                        AiIndexState.lastMessage = target.path.substringAfterLast('/')
-                    } catch (e: Exception) {
-                        AiIndexState.failCount++
-                        AiIndexState.lastError = e.message ?: e.javaClass.simpleName
+                            AiIndexState.successCount++
+                            AiIndexState.lastMessage = target.path.substringAfterLast('/')
+                        } catch (e: Exception) {
+                            AiIndexState.failCount++
+                            AiIndexState.lastError = e.message ?: e.javaClass.simpleName
+                        } finally {
+                            AiIndexState.indexed = done.incrementAndGet()
+                            latch.countDown()
+                        }
                     }
-                    AiIndexState.indexed++
                 }
+                latch.await()
+            } catch (e: Exception) {
+                AiIndexState.lastError = e.message ?: e.javaClass.simpleName
             } finally {
+                pool?.shutdown()
                 AiIndexState.running = false
             }
         }.start()
