@@ -58,7 +58,7 @@ object AiMath {
         return 0.6f
     }
 
-    fun rank(queryVector: FloatArray, query: String, items: List<AiIndex>, threshold: Float = 0.25f): List<AiIndex> {
+    fun rank(queryVector: FloatArray, query: String, items: List<AiIndex>, threshold: Float = 0.25f): List<Pair<AiIndex, Float>> {
         val scored = ArrayList<Pair<AiIndex, Float>>()
         for (item in items) {
             val vectorScore = if (queryVector.isEmpty()) 0f else cosine(queryVector, toFloats(item.vector))
@@ -69,6 +69,6 @@ object AiMath {
             }
         }
         scored.sortByDescending { it.second }
-        return scored.map { it.first }
+        return scored
     }
 }
