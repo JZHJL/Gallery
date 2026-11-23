@@ -1,71 +1,68 @@
 package org.fossify.gallery.adapters
 
 import android.content.Context
+import android.graphics.Color
 import android.net.Uri
+import android.view.Gravity
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.squareup.picasso.Picasso
 import org.fossify.gallery.databases.AiIndex
 
-class AiResultAdapter(private val context: Context, private val textColor: Int) : RecyclerView.Adapter<AiResultAdapter.ViewHolder>() {
+class AiResultAdapter(
+    private val context: Context,
+    private val textColor: Int,
+    private val onItemClick: (AiIndex) -> Unit
+) : RecyclerView.Adapter<AiResultAdapter.ViewHolder>() {
 
-    private val items = ArrayList<AiIndex>()
+    private val items = ArrayList<Pair<AiIndex, Float>>()
 
-    fun submitList(list: List<AiIndex>) {
+    fun submitList(list: List<Pair<AiIndex, Float>>) {
         items.clear()
         items.addAll(list)
         notifyDataSetChanged()
     }
 
-    inner class ViewHolder(val row: LinearLayout, val thumb: ImageView, val title: TextView, val subtitle: TextView) :
-        RecyclerView.ViewHolder(row)
+    inner class ViewHolder(val root: FrameLayout, val thumb: ImageView, val badge: TextView) : RecyclerView.ViewHolder(root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val density = context.resources.displayMetrics.density
-        val row = LinearLayout(context)
-        row.orientation = LinearLayout.HORIZONTAL
-        val verticalPadding = (8 * density).toInt()
-        row.setPadding(0, verticalPadding, 0, verticalPadding)
+        val cell = (context.resources.displayMetrics.widthPixels - (36 * density).toInt()) / 3
+
+        val root = FrameLayout(context)
+        root.layoutParams = RecyclerView.LayoutParams(cell, cell)
+        val margin = (2 * density).toInt()
+        (root.layoutParams as RecyclerView.LayoutParams).setMargins(margin, margin, margin, margin)
 
         val thumb = ImageView(context)
-        val thumbSize = (64 * density).toInt()
-        thumb.layoutParams = LinearLayout.LayoutParams(thumbSize, thumbSize)
         thumb.scaleType = ImageView.ScaleType.CENTER_CROP
-        row.addView(thumb)
+        root.addView(thumb, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
-        val textColumn = LinearLayout(context)
-        textColumn.orientation = LinearLayout.VERTICAL
-        val textParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        textParams.marginStart = (10 * density).toInt()
-        textColumn.layoutParams = textParams
+        val badge = TextView(context)
+        badge.textSize = 10f
+        badge.setTextColor(Color.WHITE)
+        badge.setBackgroundColor(Color.parseColor("#99000000"))
+        badge.setPadding((4 * density).toInt(), (1 * density).toInt(), (4 * density).toInt(), (1 * density).toInt())
+        val badgeParams = FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        badgeParams.gravity = Gravity.BOTTOM or Gravity.END
+        root.addView(badge, badgeParams)
 
-        val title = TextView(context)
-        title.maxLines = 1
-        title.textSize = 15f
-        title.setTextColor(textColor)
-        val subtitle = TextView(context)
-        subtitle.maxLines = 3
-        subtitle.textSize = 12f
-        subtitle.setTextColor(android.graphics.Color.argb(160, android.graphics.Color.red(textColor), android.graphics.Color.green(textColor), android.graphics.Color.blue(textColor)))
-        textColumn.addView(title)
-        textColumn.addView(subtitle)
-        row.addView(textColumn)
-
-        return ViewHolder(row, thumb, title, subtitle)
+        return ViewHolder(root, thumb, badge)
     }
 
     override fun onBindViewHolder(holder: ViewHolder, position: Int) {
-        val item = items[position]
-        holder.title.text = item.path.substringAfterLast('/')
-        holder.subtitle.text = item.description
+        val pair = items[position]
+        val item = pair.first
+        holder.badge.text = (pair.second * 100).toInt().toString() + "%"
         Picasso.get()
             .load(Uri.parse(item.uri))
-            .resize(160, 160)
+            .resize(320, 320)
             .centerCrop()
             .into(holder.thumb)
+        holder.root.setOnClickListener { onItemClick(item) }
     }
 
     override fun getItemCount(): Int = items.size
