@@ -15,6 +15,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import org.fossify.commons.extensions.*
 import org.fossify.gallery.adapters.AiResultAdapter
 import org.fossify.gallery.databases.AiDatabase
 import org.fossify.gallery.helpers.AiIndexState
