@@ -6,6 +6,8 @@ object AiIndexState {
     @Volatile var total = 0
     @Volatile var lastError = ""
     @Volatile var lastMessage = ""
+    @Volatile var successCount = 0
+    @Volatile var failCount = 0
     @Volatile var cancelRequested = false
 
     fun reset() {
@@ -14,6 +16,8 @@ object AiIndexState {
         total = 0
         lastError = ""
         lastMessage = ""
+        successCount = 0
+        failCount = 0
         cancelRequested = false
     }
 }
