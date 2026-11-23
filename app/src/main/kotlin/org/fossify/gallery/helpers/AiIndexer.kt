@@ -57,8 +57,10 @@ object AiIndexer {
                                 updatedAt = System.currentTimeMillis()
                             )
                         )
+                        AiIndexState.successCount++
                         AiIndexState.lastMessage = target.path.substringAfterLast('/')
                     } catch (e: Exception) {
+                        AiIndexState.failCount++
                         AiIndexState.lastError = e.message ?: e.javaClass.simpleName
                     }
                     AiIndexState.indexed++
