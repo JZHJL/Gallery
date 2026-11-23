@@ -10,7 +10,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.squareup.picasso.Picasso
 import org.fossify.gallery.databases.AiIndex
 
-class AiResultAdapter(private val context: Context) : RecyclerView.Adapter<AiResultAdapter.ViewHolder>() {
+class AiResultAdapter(private val context: Context, private val textColor: Int) : RecyclerView.Adapter<AiResultAdapter.ViewHolder>() {
 
     private val items = ArrayList<AiIndex>()
 
@@ -45,9 +45,11 @@ class AiResultAdapter(private val context: Context) : RecyclerView.Adapter<AiRes
         val title = TextView(context)
         title.maxLines = 1
         title.textSize = 15f
+        title.setTextColor(textColor)
         val subtitle = TextView(context)
         subtitle.maxLines = 3
         subtitle.textSize = 12f
+        subtitle.setTextColor(android.graphics.Color.argb(160, android.graphics.Color.red(textColor), android.graphics.Color.green(textColor), android.graphics.Color.blue(textColor)))
         textColumn.addView(title)
         textColumn.addView(subtitle)
         row.addView(textColumn)
