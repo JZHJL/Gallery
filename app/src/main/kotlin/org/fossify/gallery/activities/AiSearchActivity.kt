@@ -1,5 +1,6 @@
 package org.fossify.gallery.activities
 
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -61,8 +62,11 @@ class AiSearchActivity : SimpleActivity() {
 
     private fun buildUi(): View {
         val density = resources.displayMetrics.density
+        val textColor = getProperTextColor()
+        val backgroundColor = getProperBackgroundColor()
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
+        root.setBackgroundColor(backgroundColor)
         root.setPadding((12 * density).toInt(), (12 * density).toInt(), (12 * density).toInt(), 0)
 
         val searchRow = LinearLayout(this)
@@ -74,6 +78,8 @@ class AiSearchActivity : SimpleActivity() {
         searchField.maxLines = 1
         searchField.setSingleLine(true)
         searchField.imeOptions = EditorInfo.IME_ACTION_SEARCH
+        searchField.setTextColor(textColor)
+        searchField.setHintTextColor(Color.argb(120, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
         searchField.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
                 runSearch()
@@ -86,17 +92,20 @@ class AiSearchActivity : SimpleActivity() {
 
         val searchButton = Button(this)
         searchButton.text = "搜索"
+        searchButton.setTextColor(textColor)
         searchButton.setOnClickListener { runSearch() }
         searchRow.addView(searchButton)
 
         val settingsButton = Button(this)
         settingsButton.text = "设置"
+        settingsButton.setTextColor(textColor)
         settingsButton.setOnClickListener { showApiKeyDialog() }
         searchRow.addView(settingsButton)
         root.addView(searchRow)
 
         statusText = TextView(this)
         statusText.textSize = 13f
+        statusText.setTextColor(textColor)
         statusText.setPadding(0, (6 * density).toInt(), 0, (6 * density).toInt())
         root.addView(statusText)
 
@@ -105,17 +114,19 @@ class AiSearchActivity : SimpleActivity() {
 
         val indexButton = Button(this)
         indexButton.text = "建立索引"
+        indexButton.setTextColor(textColor)
         indexButton.setOnClickListener { startIndexing() }
         actionRow.addView(indexButton)
 
         val stopButton = Button(this)
         stopButton.text = "停止"
+        stopButton.setTextColor(textColor)
         stopButton.setOnClickListener { AiIndexer.stop() }
         actionRow.addView(stopButton)
         root.addView(actionRow)
 
         val recycler = RecyclerView(this)
-        adapter = AiResultAdapter(this)
+        adapter = AiResultAdapter(this, textColor)
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
         root.addView(recycler, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
