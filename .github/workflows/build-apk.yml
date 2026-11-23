@@ -6,6 +6,9 @@ on:
     paths:
       - '.github/workflows/build-apk.yml'
 
+permissions:
+  contents: write
+
 defaults:
   run:
     shell: bash
@@ -26,15 +29,11 @@ jobs:
 
       - name: Ensure Android SDK 36
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/platforms" || true
           SM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
-          echo "sdkmanager=$SM"
           if [ -n "$SM" ]; then
             yes | "$SM" --licenses > /dev/null 2>&1 || true
             "$SM" "platforms;android-36" "build-tools;36.0.0" > /dev/null 2>&1 || true
           fi
-          ls "$ANDROID_HOME/platforms" || true
 
       - name: Fix permissions
         run: chmod +x ./gradlew
@@ -57,3 +56,20 @@ jobs:
           name: apk-foss-debug
           path: "**/build/outputs/apk/**/*.apk"
           if-no-files-found: warn
+
+      - name: Rename for release
+        if: success()
+        run: |
+          f=$(find . -name "*foss*debug*.apk" | head -1)
+          [ -z "$f" ] && f=$(find . -name "*.apk" | head -1)
+          cp "$f" ./albumsearch-debug.apk
+          ls -lh ./albumsearch-debug.apk
+
+      - name: Publish release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: build-${{ github.run_number }}
+          body: "自动构建的 debug APK"
+          files: ./albumsearch-debug.apk
