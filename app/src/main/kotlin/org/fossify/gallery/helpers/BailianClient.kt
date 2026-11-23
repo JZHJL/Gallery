@@ -69,10 +69,37 @@ class BailianClient(private val prefs: AiPrefs) {
     }
 
     private fun post(url: String, body: String): JSONObject {
+        var lastFailure: Exception? = null
+        for (attempt in 0 until 3) {
+            try {
+                return postOnce(url, body)
+            } catch (e: Exception) {
+                lastFailure = e
+                if (!isRetryable(e) || attempt == 2) {
+                    throw e
+                }
+                Thread.sleep(2000L shl attempt)
+            }
+        }
+        throw lastFailure ?: IllegalStateException("请求失败")
+    }
+
+    private fun isRetryable(e: Exception): Boolean {
+        if (e is java.io.IOException) {
+            return true
+        }
+        val message = e.message ?: return false
+        if (message.startsWith("HTTP 429") || message.startsWith("HTTP 5")) {
+            return true
+        }
+        return false
+    }
+
+    private fun postOnce(url: String, body: String): JSONObject {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
-        connection.connectTimeout = 20000
-        connection.readTimeout = 90000
+        connection.connectTimeout = 15000
+        connection.readTimeout = 45000
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
         connection.setRequestProperty("Authorization", "Bearer " + prefs.apiKey)
