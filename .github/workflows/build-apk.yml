@@ -24,16 +24,28 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Install Android SDK 36
+      - name: Ensure Android SDK 36
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" > /dev/null
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" || true
+          SM=$(ls "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          echo "sdkmanager=$SM"
+          if [ -n "$SM" ]; then
+            yes | "$SM" --licenses > /dev/null 2>&1 || true
+            "$SM" "platforms;android-36" "build-tools;36.0.0" > /dev/null 2>&1 || true
+          fi
+          ls "$ANDROID_HOME/platforms" || true
 
       - name: Fix permissions
         run: chmod +x ./gradlew
 
       - name: Build foss debug APK
-        run: ./gradlew --no-daemon :app:assembleFossDebug --stacktrace
+        run: |
+          ./gradlew --no-daemon :app:assembleFossDebug --stacktrace || {
+            echo "==== 可用的 assemble 任务 ===="
+            ./gradlew --no-daemon :app:tasks --all 2>/dev/null | grep -i assemble | head -40
+            exit 1
+          }
 
       - name: List APKs
         if: always()
