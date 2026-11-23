@@ -139,6 +139,7 @@ class AiSearchActivity : SimpleActivity() {
         builder.append("已索引 ").append(indexedCount).append(" 张")
         if (AiIndexState.running) {
             builder.append("　|　进度 ").append(AiIndexState.indexed).append("/").append(AiIndexState.total)
+            builder.append("　成功 ").append(AiIndexState.successCount).append("　失败 ").append(AiIndexState.failCount)
             if (AiIndexState.lastMessage.isNotEmpty()) {
                 builder.append("\n正在处理：").append(AiIndexState.lastMessage)
             }
