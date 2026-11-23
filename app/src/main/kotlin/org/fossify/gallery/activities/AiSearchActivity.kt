@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -15,15 +16,16 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.EditText
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.fossify.commons.extensions.*
-import org.fossify.gallery.adapters.AiGridAdapter
+import org.fossify.gallery.adapters.AiResultAdapter
 import org.fossify.gallery.databases.AiDatabase
+import org.fossify.gallery.databases.AiIndex
 import org.fossify.gallery.helpers.AiIndexState
 import org.fossify.gallery.helpers.AiIndexer
 import org.fossify.gallery.helpers.AiMath
@@ -32,28 +34,32 @@ import org.fossify.gallery.helpers.BailianClient
 import org.fossify.gallery.helpers.PATH
 import org.fossify.gallery.helpers.SHOW_ALL
 import org.fossify.gallery.services.FloatingBallService
+import java.util.Locale
 
 class AiSearchActivity : SimpleActivity() {
 
     private lateinit var prefs: AiPrefs
     private lateinit var searchField: EditText
-    private lateinit var statsText: TextView
     private lateinit var statusText: TextView
-    private lateinit var historyRow: LinearLayout
-    private lateinit var historyScroll: HorizontalScrollView
-    private lateinit var adapter: AiGridAdapter
+    private lateinit var statsText: TextView
+    private lateinit var progressBar: ProgressBar
+    private lateinit var adapter: AiResultAdapter
     private val handler = Handler(Looper.getMainLooper())
     private var searchThread: Thread? = null
 
     @Volatile
     private var indexedCount = 0
+
     @Volatile
-    private var lastHitCount = -1
+    private var mediaTotal = 0
+
+    @Volatile
+    private var lastQueryCost = 0.0
 
     private val statusTicker = object : Runnable {
         override fun run() {
             updateStatus()
-            handler.postDelayed(this, 900)
+            handler.postDelayed(this, 700)
         }
     }
 
@@ -62,11 +68,15 @@ class AiSearchActivity : SimpleActivity() {
         prefs = AiPrefs(this)
         setContentView(buildUi())
         handler.post(statusTicker)
-        refreshCount()
-        renderHistory()
+        refreshCounters()
         if (prefs.apiKey.isEmpty()) {
             showApiKeyDialog()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshCounters()
     }
 
     override fun onDestroy() {
@@ -74,49 +84,36 @@ class AiSearchActivity : SimpleActivity() {
         super.onDestroy()
     }
 
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun cardBackground(color: Int): GradientDrawable {
+        val drawable = GradientDrawable()
+        drawable.cornerRadius = dp(14).toFloat()
+        drawable.setColor(color)
+        return drawable
+    }
+
     private fun buildUi(): View {
-        val density = resources.displayMetrics.density
         val textColor = getProperTextColor()
         val backgroundColor = getProperBackgroundColor()
-        val accentColor = getProperPrimaryColor()
+        val surfaceColor = backgroundColor.adjustAlpha(0.06f)
 
         val root = LinearLayout(this)
         root.orientation = LinearLayout.VERTICAL
         root.setBackgroundColor(backgroundColor)
-        root.setPadding(dp(12), dp(10), dp(12), 0)
+        root.setPadding(dp(14), dp(14), dp(14), 0)
 
-        // ---- 统计卡 ----
-        val card = LinearLayout(this)
-        card.orientation = LinearLayout.VERTICAL
-        card.setPadding(dp(14), dp(10), dp(14), dp(10))
-        val cardBg = GradientDrawable()
-        cardBg.cornerRadius = dp(12).toFloat()
-        cardBg.setColor(Color.argb(20, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)))
-        card.background = cardBg
-
-        statsText = TextView(this)
-        statsText.textSize = 14f
-        statsText.setTextColor(textColor)
-        card.addView(statsText)
-
-        statusText = TextView(this)
-        statusText.textSize = 12f
-        statusText.setTextColor(Color.argb(160, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
-        card.addView(statusText)
-        root.addView(card)
-
-        // ---- 搜索行 ----
+        // 搜索行
         val searchRow = LinearLayout(this)
         searchRow.orientation = LinearLayout.HORIZONTAL
         searchRow.gravity = Gravity.CENTER_VERTICAL
-        searchRow.setPadding(0, dp(8), 0, 0)
 
         searchField = EditText(this)
-        searchField.hint = "说说照片里有什么"
+        searchField.hint = "描述照片内容，如「消防演练」「第23题」"
         searchField.maxLines = 1
         searchField.setSingleLine(true)
         searchField.setTextColor(textColor)
-        searchField.setHintTextColor(Color.argb(120, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
+        searchField.setHintTextColor(textColor.adjustAlpha(0.45f))
         searchField.imeOptions = EditorInfo.IME_ACTION_SEARCH
         searchField.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
@@ -135,143 +132,126 @@ class AiSearchActivity : SimpleActivity() {
         searchRow.addView(searchButton)
         root.addView(searchRow)
 
-        // ---- 历史 ----
-        historyScroll = HorizontalScrollView(this)
-        historyScroll.isHorizontalScrollBarEnabled = false
-        historyRow = LinearLayout(this)
-        historyRow.orientation = LinearLayout.HORIZONTAL
-        historyRow.setPadding(0, dp(6), 0, 0)
-        historyScroll.addView(historyRow)
-        root.addView(historyScroll)
+        // 状态卡片
+        val card = LinearLayout(this)
+        card.orientation = LinearLayout.VERTICAL
+        card.background = cardBackground(surfaceColor)
+        card.setPadding(dp(14), dp(12), dp(14), dp(12))
+        val cardParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        cardParams.topMargin = dp(8)
+        root.addView(card, cardParams)
 
-        // ---- 操作行 ----
+        statsText = TextView(this)
+        statsText.textSize = 14f
+        statsText.setTextColor(textColor)
+        card.addView(statsText)
+
+        statusText = TextView(this)
+        statusText.textSize = 13f
+        statusText.setTextColor(textColor.adjustAlpha(0.7f))
+        statusText.setPadding(0, dp(6), 0, 0)
+        card.addView(statusText)
+
+        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal)
+        progressBar.max = 100
+        progressBar.progress = 0
+        progressBar.visibility = View.GONE
+        val progressParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6))
+        progressParams.topMargin = dp(8)
+        card.addView(progressBar, progressParams)
+
+        // 操作行
         val actionRow = LinearLayout(this)
         actionRow.orientation = LinearLayout.HORIZONTAL
-        val indexButton = Button(this)
-        indexButton.text = "索引"
-        indexButton.setTextColor(textColor)
-        indexButton.setOnClickListener { startIndexing() }
-        actionRow.addView(indexButton)
+        val actionParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        actionParams.topMargin = dp(10)
+        root.addView(actionRow, actionParams)
 
-        val stopButton = Button(this)
-        stopButton.text = "停止"
-        stopButton.setTextColor(textColor)
-        stopButton.setOnClickListener { AiIndexer.stop() }
-        actionRow.addView(stopButton)
+        actionRow.addView(makeButton("建立索引", textColor) { startIndexing() })
+        actionRow.addView(makeButton("停止", textColor) { AiIndexer.stop() })
+        actionRow.addView(makeButton("设置", textColor) { showApiKeyDialog() })
+        actionRow.addView(makeButton("悬浮球", textColor) { toggleFloatingBall() })
 
-        val ballButton = Button(this)
-        ballButton.text = "悬浮球"
-        ballButton.setTextColor(textColor)
-        ballButton.setOnClickListener { toggleFloatingBall() }
-        actionRow.addView(ballButton)
-
-        val moreButton = Button(this)
-        moreButton.text = "设置"
-        moreButton.setTextColor(textColor)
-        moreButton.setOnClickListener { showSettingsDialog() }
-        actionRow.addView(moreButton)
-        root.addView(actionRow)
-
-        // ---- 结果网格 ----
-        val grid = RecyclerView(this)
-        adapter = AiGridAdapter(this, textColor) { item -> openPhoto(item.path) }
-        grid.layoutManager = GridLayoutManager(this, 2)
-        grid.adapter = adapter
-        val gridParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-        gridParams.topMargin = dp(6)
-        root.addView(grid, gridParams)
+        // 结果网格
+        val recycler = RecyclerView(this)
+        adapter = AiResultAdapter(this, textColor) { openImage(it) }
+        recycler.layoutManager = GridLayoutManager(this, 3)
+        recycler.adapter = adapter
+        val recyclerParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        recyclerParams.topMargin = dp(10)
+        root.addView(recycler, recyclerParams)
 
         return root
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private fun openPhoto(path: String) {
-        if (path.isEmpty()) {
-            return
-        }
-        Intent(this, ViewPagerActivity::class.java).apply {
-            putExtra(PATH, path)
-            putExtra(SHOW_ALL, false)
-            startActivity(this)
-        }
+    private fun makeButton(label: String, textColor: Int, action: () -> Unit): Button {
+        val button = Button(this)
+        button.text = label
+        button.setTextColor(textColor)
+        button.textSize = 13f
+        button.setPadding(dp(4), 0, dp(4), 0)
+        button.setOnClickListener { action() }
+        val params = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        button.layoutParams = params
+        return button
     }
 
     private fun updateStatus() {
-        val estimate = indexedCount * 0.0009
-        statsText.text = "库内 " + indexedCount + " 张　·　估算花费 ≈ " + String.format("%.2f", estimate) + " 元"
+        progressBar.visibility = if (AiIndexState.running) View.VISIBLE else View.GONE
+        if (AiIndexState.running && AiIndexState.total > 0) {
+            progressBar.max = AiIndexState.total
+            progressBar.progress = AiIndexState.indexed
+        }
+
+        val cost = indexedCount * COST_PER_PHOTO
+        statsText.text = "已索引 " + indexedCount + " / 媒体库 " + mediaTotal + " 张　·　估算花费 ¥" +
+            String.format(Locale.CHINA, "%.3f", cost)
 
         val builder = StringBuilder()
         if (AiIndexState.running) {
-            builder.append("索引中 ").append(AiIndexState.indexed).append("/").append(AiIndexState.total)
-            builder.append("　成功 ").append(AiIndexState.successCount).append("　失败 ").append(AiIndexState.failCount)
+            builder.append("进度 ").append(AiIndexState.indexed).append("/").append(AiIndexState.total)
+            builder.append("　成功 ").append(AiIndexState.successCount)
+            builder.append("　失败 ").append(AiIndexState.failCount)
             if (AiIndexState.lastMessage.isNotEmpty()) {
                 builder.append("\n正在处理：").append(AiIndexState.lastMessage)
             }
-            refreshCount()
-        } else if (lastHitCount >= 0) {
-            builder.append("命中 ").append(lastHitCount).append(" 张")
+        } else if (AiIndexState.indexed > 0) {
+            builder.append("上次任务结束：成功 ").append(AiIndexState.successCount)
+            builder.append("，失败 ").append(AiIndexState.failCount)
         } else {
-            builder.append("点「索引」开始建立语义索引")
+            builder.append("输入一句话就能搜照片；先点「建立索引」让 AI 认识你的相册。")
         }
         if (AiIndexState.lastError.isNotEmpty()) {
-            builder.append("\n上次错误：").append(AiIndexState.lastError.take(90))
+            builder.append("\n上次错误：").append(AiIndexState.lastError.take(140))
         }
         statusText.text = builder.toString()
     }
 
-    private fun refreshCount() {
+    private fun refreshCounters() {
         Thread {
-            indexedCount = try {
-                AiDatabase.getInstance(applicationContext).aiIndexDao().count()
+            try {
+                indexedCount = AiDatabase.getInstance(applicationContext).aiIndexDao().count()
             } catch (e: Exception) {
-                0
+                indexedCount = 0
+            }
+            try {
+                val cursor = contentResolver.query(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.Images.Media._ID),
+                    null, null, null
+                )
+                mediaTotal = cursor?.count ?: 0
+                cursor?.close()
+            } catch (e: Exception) {
+                mediaTotal = 0
             }
         }.start()
-    }
-
-    private fun renderHistory() {
-        historyRow.removeAllViews()
-        val items = prefs.history.split("|").filter { it.isNotEmpty() }.take(8)
-        if (items.isEmpty()) {
-            historyScroll.visibility = View.GONE
-            return
-        }
-        historyScroll.visibility = View.VISIBLE
-        val textColor = getProperTextColor()
-        val accentColor = getProperPrimaryColor()
-        for (query in items) {
-            val chip = TextView(this)
-            chip.text = query
-            chip.textSize = 12f
-            chip.setTextColor(textColor)
-            chip.setPadding(dp(11), dp(6), dp(11), dp(6))
-            val background = GradientDrawable()
-            background.cornerRadius = dp(14).toFloat()
-            background.setColor(Color.argb(26, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)))
-            chip.background = background
-            val params = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            params.marginEnd = dp(6)
-            chip.layoutParams = params
-            chip.setOnClickListener {
-                searchField.setText(query)
-                runSearch()
-            }
-            historyRow.addView(chip)
-        }
-    }
-
-    private fun rememberQuery(query: String) {
-        val existing = prefs.history.split("|").filter { it.isNotEmpty() && it != query }
-        val updated = (listOf(query) + existing).take(8).joinToString("|")
-        prefs.history = updated
-        renderHistory()
     }
 
     private fun runSearch() {
         val query = searchField.text.toString().trim()
         if (query.isEmpty()) {
-            toast("先输入想找的内容")
+            toast("请先输入要搜索的内容")
             return
         }
         if (prefs.apiKey.isEmpty()) {
@@ -279,12 +259,12 @@ class AiSearchActivity : SimpleActivity() {
             return
         }
         hideKeyboard()
-        rememberQuery(query)
         statusText.text = "搜索中…"
         val previous = searchThread
         if (previous != null && previous.isAlive) {
             previous.interrupt()
         }
+        val startedAt = System.currentTimeMillis()
         val thread = Thread {
             try {
                 val client = BailianClient(prefs)
@@ -297,14 +277,26 @@ class AiSearchActivity : SimpleActivity() {
                 val all = dao.getAll()
                 val results = AiMath.rank(queryVector, query, all)
                 indexedCount = all.size
-                lastHitCount = results.size
-                handler.post { adapter.submitList(results) }
+                handler.post {
+                    adapter.submitList(results)
+                    val elapsed = System.currentTimeMillis() - startedAt
+                    statusText.text = "命中 " + results.size + " 张 · 库内 " + all.size +
+                        " 张 · 用时 " + elapsed + " 毫秒" + if (queryVector.isEmpty()) " · 已降级为关键词搜索" else ""
+                }
             } catch (e: Exception) {
                 handler.post { statusText.text = "搜索失败：" + (e.message ?: e.javaClass.simpleName) }
             }
         }
         searchThread = thread
         thread.start()
+    }
+
+    private fun openImage(item: AiIndex) {
+        Intent(this, ViewPagerActivity::class.java).apply {
+            putExtra(PATH, item.path)
+            putExtra(SHOW_ALL, false)
+            startActivity(this)
+        }
     }
 
     private fun startIndexing() {
@@ -321,73 +313,11 @@ class AiSearchActivity : SimpleActivity() {
         input.setText("100")
         AlertDialog.Builder(this)
             .setTitle("索引多少张")
-            .setMessage("按拍摄时间从新到旧，已索引的自动跳过。")
+            .setMessage("按拍摄时间从新到旧取前若干张，已索引过的会自动跳过。约 ¥0.0019/张。")
             .setView(input)
             .setPositiveButton("开始") { _, _ ->
-                val limit = (input.text.toString().toIntOrNull() ?: 100).coerceIn(1, 5000)
+                val limit = (input.text.toString().toIntOrNull() ?: 100).coerceIn(1, 20000)
                 AiIndexer.start(applicationContext, prefs, limit)
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun showSettingsDialog() {
-        val options = arrayOf("设置 API Key", "调整模型", "清空索引", "悬浮球开关")
-        AlertDialog.Builder(this)
-            .setTitle("设置")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> showApiKeyDialog()
-                    1 -> showModelDialog()
-                    2 -> confirmClearIndex()
-                    3 -> toggleFloatingBall()
-                }
-            }
-            .show()
-    }
-
-    private fun showApiKeyDialog() {
-        val input = EditText(this)
-        input.inputType = InputType.TYPE_CLASS_TEXT
-        input.hint = "sk-..."
-        input.setText(prefs.apiKey)
-        AlertDialog.Builder(this)
-            .setTitle("百炼 API Key")
-            .setMessage("用于生成照片描述与向量，只保存在本机。")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                prefs.apiKey = input.text.toString().trim()
-                toast("已保存")
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun showModelDialog() {
-        val input = EditText(this)
-        input.setText(prefs.visionModel)
-        AlertDialog.Builder(this)
-            .setTitle("描述模型")
-            .setMessage("默认 qwen3-vl-plus。向量模型固定 text-embedding-v4（1024 维）。")
-            .setView(input)
-            .setPositiveButton("保存") { _, _ ->
-                prefs.visionModel = input.text.toString().trim().ifEmpty { "qwen3-vl-plus" }
-                toast("已保存")
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun confirmClearIndex() {
-        AlertDialog.Builder(this)
-            .setTitle("清空索引？")
-            .setMessage("会删除全部描述与向量，照片本身不受影响。已花的钱不会退。")
-            .setPositiveButton("清空") { _, _ ->
-                Thread {
-                    AiDatabase.getInstance(applicationContext).aiIndexDao().clear()
-                    refreshCount()
-                    handler.post { adapter.submitList(emptyList()) }
-                }.start()
             }
             .setNegativeButton("取消", null)
             .show()
@@ -407,12 +337,31 @@ class AiSearchActivity : SimpleActivity() {
         } else {
             startService(serviceIntent)
             ballRunning = true
-            toast("悬浮球已开启")
+            toast("悬浮球已开启，点它就能搜照片")
         }
+    }
+
+    private fun showApiKeyDialog() {
+        val input = EditText(this)
+        input.inputType = InputType.TYPE_CLASS_TEXT
+        input.hint = "sk-..."
+        input.setText(prefs.apiKey)
+        AlertDialog.Builder(this)
+            .setTitle("百炼 API Key")
+            .setMessage("用于生成照片描述和向量。只保存在本机，不上传。\n描述模型：" + prefs.visionModel + "\n向量模型：" + prefs.embedModel)
+            .setView(input)
+            .setPositiveButton("保存") { _, _ ->
+                prefs.apiKey = input.text.toString().trim()
+                toast("已保存")
+            }
+            .setNegativeButton("取消", null)
+            .show()
     }
 
     companion object {
         @Volatile
         var ballRunning = false
+
+        private const val COST_PER_PHOTO = 0.0019
     }
 }
