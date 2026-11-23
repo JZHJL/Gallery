@@ -15,6 +15,10 @@ class AiPrefs(context: Context) {
         get() = prefs.getString("vision_model", "qwen3-vl-plus") ?: "qwen3-vl-plus"
         set(value) = prefs.edit().putString("vision_model", value).apply()
 
+    var history: String
+        get() = prefs.getString("history", "") ?: ""
+        set(value) = prefs.edit().putString("history", value).apply()
+
     var embedModel: String
         get() = prefs.getString("embed_model", "text-embedding-v4") ?: "text-embedding-v4"
         set(value) = prefs.edit().putString("embed_model", value).apply()
