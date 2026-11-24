@@ -12,19 +12,12 @@ class BailianClient(private val prefs: AiPrefs) {
 
     data class TokenUsage(val inputTokens: Int, val outputTokens: Int)
 
-    private var keyIndex = 0
-
     companion object {
         private const val BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         private const val VISION_PROMPT = "请用中文详细描述这张照片：场景、主要对象、人物及其动作、环境与光线氛围。如果画面中有文字、标题、公式、板书、路牌、标签，请逐字转写出来。不超过200字。"
-    }
 
-    private fun currentKey(): String {
-        val keys = prefs.apiKeys
-        if (keys.isEmpty()) {
-            return ""
-        }
-        return keys[keyIndex % keys.size]
+        @Volatile
+        private var keyCursor = 0
     }
 
     fun describeImage(jpegBytes: ByteArray): Pair<String, TokenUsage> {
@@ -78,16 +71,28 @@ class BailianClient(private val prefs: AiPrefs) {
         return vector
     }
 
+    private fun currentKey(): String {
+        val keys = prefs.apiKeys
+        if (keys.isEmpty()) {
+            throw IllegalStateException("未设置 API Key")
+        }
+        return keys[Math.abs(keyCursor) % keys.size]
+    }
+
     private fun post(url: String, body: String): JSONObject {
         var lastFailure: Exception? = null
+        val keyCount = prefs.apiKeys.size.coerceAtLeast(1)
         for (attempt in 0 until 3) {
             try {
                 return postOnce(url, body, currentKey())
             } catch (e: Exception) {
                 lastFailure = e
                 val message = e.message ?: ""
-                if (message.startsWith("HTTP 429") && prefs.apiKeys.size > 1) {
-                    keyIndex++
+                if (message.startsWith("HTTP 429")) {
+                    if (keyCount > 1) {
+                        keyCursor++
+                    }
+                    Thread.sleep(1500L * (attempt + 1))
                     continue
                 }
                 if (!isRetryable(e) || attempt == 2) {
@@ -104,17 +109,17 @@ class BailianClient(private val prefs: AiPrefs) {
             return true
         }
         val message = e.message ?: return false
-        return message.startsWith("HTTP 429") || message.startsWith("HTTP 5")
+        return message.startsWith("HTTP 5")
     }
 
-    private fun postOnce(url: String, body: String, key: String): JSONObject {
+    private fun postOnce(url: String, body: String, apiKey: String): JSONObject {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
         connection.connectTimeout = 15000
         connection.readTimeout = 45000
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
-        connection.setRequestProperty("Authorization", "Bearer " + key)
+        connection.setRequestProperty("Authorization", "Bearer " + apiKey)
         connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
 
         val code = connection.responseCode
