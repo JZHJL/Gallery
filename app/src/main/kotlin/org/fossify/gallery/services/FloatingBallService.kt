@@ -66,7 +66,8 @@ class FloatingBallService : Service() {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         windowManager = wm
         val density = resources.displayMetrics.density
-        val size = (56 * density).toInt()
+        val prefs = AiPrefs(this)
+        val size = (prefs.ballSize * density).toInt()
 
         val view = TextView(this)
         view.text = "搜"
@@ -75,9 +76,8 @@ class FloatingBallService : Service() {
         view.gravity = Gravity.CENTER
         val background = GradientDrawable()
         background.shape = GradientDrawable.OVAL
-        val prefs = AiPrefs(this)
         val accent = if (prefs.accentColor != 0) prefs.accentColor else Color.parseColor("#4C8DFF")
-        background.setColor(accent)
+        background.setColor(Color.argb(prefs.ballAlpha, Color.red(accent), Color.green(accent), Color.blue(accent)))
         view.background = background
 
         val layoutParams = WindowManager.LayoutParams(
@@ -93,7 +93,10 @@ class FloatingBallService : Service() {
         )
         layoutParams.gravity = Gravity.TOP or Gravity.START
         layoutParams.x = (16 * density).toInt()
-        layoutParams.y = (resources.displayMetrics.heightPixels * 0.35f).toInt()
+        layoutParams.y = if (prefs.ballY >= 0) prefs.ballY else (resources.displayMetrics.heightPixels * 0.35f).toInt()
+        if (prefs.ballX >= 0) {
+            layoutParams.x = prefs.ballX
+        }
 
         var downTime = 0L
         var downX = 0f
@@ -128,6 +131,10 @@ class FloatingBallService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    if (dragged) {
+                        prefs.ballX = lp.x
+                        prefs.ballY = lp.y
+                    }
                     if (!dragged) {
                         val longPress = System.currentTimeMillis() - downTime > 450
                         if (longPress) {
