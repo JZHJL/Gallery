@@ -20,6 +20,10 @@ class AiSearchWidgetProvider : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.ai_widget_root, pendingIntent)
+            val accent = AiPrefs(context).accentColor
+            if (accent != 0) {
+                views.setInt(R.id.ai_widget_root, "setBackgroundColor", accent)
+            }
             appWidgetManager.updateAppWidget(widgetId, views)
         }
     }
