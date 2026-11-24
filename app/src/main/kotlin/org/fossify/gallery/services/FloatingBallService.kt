@@ -75,7 +75,9 @@ class FloatingBallService : Service() {
         view.gravity = Gravity.CENTER
         val background = GradientDrawable()
         background.shape = GradientDrawable.OVAL
-        background.setColor(Color.parseColor("#4C8DFF"))
+        val prefs = AiPrefs(this)
+        val accent = if (prefs.accentColor != 0) prefs.accentColor else Color.parseColor("#4C8DFF")
+        background.setColor(accent)
         view.background = background
 
         val layoutParams = WindowManager.LayoutParams(
