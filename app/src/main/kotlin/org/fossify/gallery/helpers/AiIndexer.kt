@@ -7,6 +7,8 @@ import android.provider.MediaStore
 import org.fossify.gallery.databases.AiDatabase
 import org.fossify.gallery.databases.AiIndex
 import org.fossify.gallery.databases.AiIndexDao
+import org.fossify.gallery.databases.AiVector
+import org.fossify.gallery.databases.AiVectorDao
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -31,11 +33,13 @@ object AiIndexer {
         Thread {
             var pool: java.util.concurrent.ExecutorService? = null
             try {
-                val dao = AiDatabase.getInstance(appContext).aiIndexDao()
+                val db = AiDatabase.getInstance(appContext)
+                val dao = db.aiIndexDao()
+                val vectorDao = db.aiVectorDao()
                 val client = BailianClient(prefs)
 
                 // 第一步：只补向量，不重新花钱生成描述
-                backfillVectors(dao, client, prefs)
+                backfillVectors(dao, vectorDao, client, prefs)
 
                 // 第二步：抓取"还没索引过"的照片
                 val targets = collectImages(appContext, limit, dao)
@@ -56,7 +60,7 @@ object AiIndexer {
                             if (AiIndexState.cancelRequested) {
                                 AiIndexState.skipCount++
                             } else {
-                                indexOne(appContext, dao, client, prefs, target)
+                                indexOne(appContext, dao, vectorDao, client, prefs, target)
                             }
                         } catch (e: Exception) {
                             AiIndexState.failCount++
@@ -88,7 +92,14 @@ object AiIndexer {
         AiIndexState.cancelRequested = true
     }
 
-    private fun indexOne(context: Context, dao: AiIndexDao, client: BailianClient, prefs: AiPrefs, target: Target) {
+    private fun indexOne(
+        context: Context,
+        dao: AiIndexDao,
+        vectorDao: AiVectorDao,
+        client: BailianClient,
+        prefs: AiPrefs,
+        target: Target
+    ) {
         val jpeg = AiImagePrep.loadJpeg(context, Uri.parse(target.uri), MAX_SIDE)
         if (jpeg == null) {
             AiIndexState.skipCount++
@@ -119,19 +130,29 @@ object AiIndexer {
             AiLog.w("index", "embedding failed, keep description " + target.path + " :: " + (e.message ?: ""))
         }
 
+        val now = System.currentTimeMillis()
         dao.upsert(
             AiIndex(
                 uri = target.uri,
                 path = target.path,
                 description = description,
                 ocrText = description,
-                vector = AiMath.toBytes(vector),
-                dim = vector.size,
                 model = prefs.visionModel,
                 sizeBytes = target.size,
-                updatedAt = System.currentTimeMillis()
+                updatedAt = now
             )
         )
+        if (vector.isNotEmpty()) {
+            vectorDao.upsert(
+                AiVector(
+                    uri = target.uri,
+                    vector = AiMath.toBytes(vector),
+                    dim = vector.size,
+                    model = prefs.embedModel,
+                    updatedAt = now
+                )
+            )
+        }
         AiIndexState.successCount++
         AiIndexState.lastMessage = target.path.substringAfterLast('/')
         AiLog.w(
