@@ -22,63 +22,41 @@ object AiIndexer {
         if (AiIndexState.running) {
             return
         }
-        AiLog.init(context)
+        val appContext = context.applicationContext
+        AiLog.init(appContext)
         AiLog.w("index", "start limit=" + limit + " model=" + prefs.visionModel + "/" + prefs.embedModel)
         AiIndexState.reset()
         AiIndexState.running = true
-        val appContext = context.applicationContext
+
         Thread {
             var pool: java.util.concurrent.ExecutorService? = null
             try {
                 val dao = AiDatabase.getInstance(appContext).aiIndexDao()
-                val targets = collectImages(appContext, limit, dao)
-                AiLog.w("index", "collected " + targets.size + " new targets (limit=" + limit + ")")
-                AiIndexState.total = targets.size
                 val client = BailianClient(prefs)
+
+                // 第一步：只补向量，不重新花钱生成描述
+                backfillVectors(dao, client, prefs)
+
+                // 第二步：抓取"还没索引过"的照片
+                val targets = collectImages(appContext, limit, dao)
+                AiIndexState.total = targets.size
+                AiLog.w("index", "collected " + targets.size + " new targets (limit=" + limit + ")")
+                if (targets.isEmpty()) {
+                    AiLog.w("index", "nothing new to index")
+                    return@Thread
+                }
+
                 val done = AtomicInteger(0)
                 val latch = CountDownLatch(targets.size)
                 pool = Executors.newFixedThreadPool(CONCURRENCY)
+
                 for (target in targets) {
                     pool.execute {
                         try {
-                            when {
-                                AiIndexState.cancelRequested -> {
-                                    AiIndexState.skipCount++
-                                }
-                                dao.getByUri(target.uri) != null -> {
-                                    AiIndexState.skipCount++
-                                }
-                                else -> {
-                                    val jpeg = AiImagePrep.loadJpeg(appContext, Uri.parse(target.uri), MAX_SIDE)
-                                    if (jpeg == null) {
-                                        AiIndexState.skipCount++
-                                        AiLog.w("index", "skip unreadable " + target.path)
-                                    } else {
-                                        val description = client.describeImage(jpeg).first
-                                        if (description.isEmpty()) {
-                                            AiIndexState.failCount++
-                                            AiLog.w("index", "fail empty description " + target.path)
-                                        } else {
-                                            val vector = client.embedText(description)
-                                            dao.upsert(
-                                                AiIndex(
-                                                    uri = target.uri,
-                                                    path = target.path,
-                                                    description = description,
-                                                    ocrText = description,
-                                                    vector = AiMath.toBytes(vector),
-                                                    dim = vector.size,
-                                                    model = prefs.visionModel,
-                                                    sizeBytes = target.size,
-                                                    updatedAt = System.currentTimeMillis()
-                                                )
-                                            )
-                                            AiIndexState.successCount++
-                                            AiLog.w("index", "ok " + target.path.substringAfterLast('/') + " dim=" + vector.size)
-                                            AiIndexState.lastMessage = target.path.substringAfterLast('/')
-                                        }
-                                    }
-                                }
+                            if (AiIndexState.cancelRequested) {
+                                AiIndexState.skipCount++
+                            } else {
+                                indexOne(appContext, dao, client, prefs, target)
                             }
                         } catch (e: Exception) {
                             AiIndexState.failCount++
@@ -93,16 +71,101 @@ object AiIndexer {
                 latch.await()
             } catch (e: Exception) {
                 AiIndexState.lastError = e.message ?: e.javaClass.simpleName
+                AiLog.w("index", "aborted :: " + (e.message ?: e.javaClass.simpleName))
             } finally {
                 pool?.shutdown()
-                AiLog.w("index", "done success=" + AiIndexState.successCount + " fail=" + AiIndexState.failCount + " skip=" + AiIndexState.skipCount)
                 AiIndexState.running = false
+                AiLog.w(
+                    "index",
+                    "done success=" + AiIndexState.successCount + " fail=" + AiIndexState.failCount +
+                        " skip=" + AiIndexState.skipCount + " costYuan=" + String.format("%.4f", prefs.estimatedCost())
+                )
             }
         }.start()
     }
 
     fun stop() {
         AiIndexState.cancelRequested = true
+    }
+
+    private fun indexOne(context: Context, dao: AiIndexDao, client: BailianClient, prefs: AiPrefs, target: Target) {
+        val jpeg = AiImagePrep.loadJpeg(context, Uri.parse(target.uri), MAX_SIDE)
+        if (jpeg == null) {
+            AiIndexState.skipCount++
+            AiLog.w("index", "skip unreadable " + target.path)
+            return
+        }
+
+        val described = client.describeImage(jpeg)
+        val description = described.first
+        val usage = described.second
+        prefs.addUsage(usage.inputTokens, usage.outputTokens, 0)
+
+        if (description.isEmpty()) {
+            AiIndexState.failCount++
+            AiLog.w("index", "fail empty description " + target.path)
+            return
+        }
+
+        // 描述已经花钱拿到了，无论向量是否成功都先入库，避免下次重复付费
+        var vector = FloatArray(0)
+        var embeddingTokens = 0
+        try {
+            val embedded = client.embedTextWithUsage(description)
+            vector = embedded.first
+            embeddingTokens = embedded.second
+            prefs.addUsage(0, 0, embeddingTokens)
+        } catch (e: Exception) {
+            AiLog.w("index", "embedding failed, keep description " + target.path + " :: " + (e.message ?: ""))
+        }
+
+        dao.upsert(
+            AiIndex(
+                uri = target.uri,
+                path = target.path,
+                description = description,
+                ocrText = description,
+                vector = AiMath.toBytes(vector),
+                dim = vector.size,
+                model = prefs.visionModel,
+                sizeBytes = target.size,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+        AiIndexState.successCount++
+        AiIndexState.lastMessage = target.path.substringAfterLast('/')
+        AiLog.w(
+            "index",
+            "ok " + target.path.substringAfterLast('/') + " dim=" + vector.size +
+                " in=" + usage.inputTokens + " out=" + usage.outputTokens + " emb=" + embeddingTokens
+        )
+    }
+
+    private fun backfillVectors(dao: AiIndexDao, client: BailianClient, prefs: AiPrefs) {
+        val pending = try {
+            dao.getPendingVectors()
+        } catch (e: Exception) {
+            return
+        }
+        if (pending.isEmpty()) {
+            return
+        }
+        AiLog.w("index", "backfill vectors for " + pending.size + " rows")
+        for (row in pending) {
+            if (AiIndexState.cancelRequested) {
+                break
+            }
+            try {
+                val embedded = client.embedTextWithUsage(row.description)
+                val vector = embedded.first
+                prefs.addUsage(0, 0, embedded.second)
+                if (vector.isNotEmpty()) {
+                    dao.upsert(row.copy(vector = AiMath.toBytes(vector), dim = vector.size, updatedAt = System.currentTimeMillis()))
+                }
+            } catch (e: Exception) {
+                AiLog.w("index", "backfill failed " + row.path + " :: " + (e.message ?: ""))
+            }
+        }
     }
 
     private fun collectImages(context: Context, limit: Int, dao: AiIndexDao): List<Target> {
