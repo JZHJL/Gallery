@@ -35,6 +35,9 @@ interface AiIndexDao {
     @Query("SELECT path FROM ai_index WHERE description LIKE :pattern OR ocrText LIKE :pattern")
     fun searchPathsByKeyword(pattern: String): List<String>
 
+    @Query("SELECT * FROM ai_index WHERE dim = 0 AND description != ''")
+    fun getPendingVectors(): List<AiIndex>
+
     @Query("SELECT COUNT(*) FROM ai_index")
     fun count(): Int
 
