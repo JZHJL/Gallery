@@ -55,7 +55,9 @@ class BailianClient(private val prefs: AiPrefs) {
         return text.trim() to tokens
     }
 
-    fun embedText(text: String): FloatArray {
+    fun embedText(text: String): FloatArray = embedTextWithUsage(text).first
+
+    fun embedTextWithUsage(text: String): Pair<FloatArray, Int> {
         val payload = JSONObject().apply {
             put("model", prefs.embedModel)
             put("dimensions", 1024)
@@ -63,12 +65,16 @@ class BailianClient(private val prefs: AiPrefs) {
             put("input", JSONArray().put(text))
         }
         val response = post(BASE_URL + "/embeddings", payload.toString())
-        val array = response.optJSONArray("data")?.optJSONObject(0)?.optJSONArray("embedding") ?: return FloatArray(0)
+        val tokens = response.optJSONObject("usage")?.optInt("total_tokens") ?: 0
+        val array = response.optJSONArray("data")?.optJSONObject(0)?.optJSONArray("embedding")
+        if (array == null) {
+            return FloatArray(0) to tokens
+        }
         val vector = FloatArray(array.length())
         for (i in 0 until array.length()) {
             vector[i] = array.optDouble(i, 0.0).toFloat()
         }
-        return vector
+        return vector to tokens
     }
 
     private fun currentKey(): String {
