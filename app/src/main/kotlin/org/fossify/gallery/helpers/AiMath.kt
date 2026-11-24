@@ -58,10 +58,17 @@ object AiMath {
         return 0.6f
     }
 
-    fun rank(queryVector: FloatArray, query: String, items: List<AiIndex>, threshold: Float = 0.25f): List<Pair<AiIndex, Float>> {
+    fun rank(
+        queryVector: FloatArray,
+        query: String,
+        items: List<Pair<AiIndex, FloatArray>>,
+        threshold: Float = 0.25f
+    ): List<Pair<AiIndex, Float>> {
         val scored = ArrayList<Pair<AiIndex, Float>>()
-        for (item in items) {
-            val vectorScore = if (queryVector.isEmpty()) 0f else cosine(queryVector, toFloats(item.vector))
+        for (entry in items) {
+            val item = entry.first
+            val vector = entry.second
+            val vectorScore = if (queryVector.isEmpty() || vector.isEmpty()) 0f else cosine(queryVector, vector)
             val textScore = keywordScore(item, query)
             val score = maxOf(vectorScore, textScore)
             if (score >= threshold) {
