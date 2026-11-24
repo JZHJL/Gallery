@@ -28,6 +28,7 @@ import org.fossify.gallery.databases.AiDatabase
 import org.fossify.gallery.databases.AiIndex
 import org.fossify.gallery.helpers.AiIndexState
 import org.fossify.gallery.helpers.AiIndexer
+import org.fossify.gallery.helpers.AiLog
 import org.fossify.gallery.helpers.AiMath
 import org.fossify.gallery.helpers.AiPrefs
 import org.fossify.gallery.helpers.BailianClient
@@ -74,6 +75,7 @@ class AiSearchActivity : SimpleActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = AiPrefs(this)
+        AiLog.init(applicationContext)
         setContentView(buildUi())
         handler.post(statusTicker)
         refreshCounters()
@@ -623,6 +625,42 @@ class AiSearchActivity : SimpleActivity() {
         val embedInput = EditText(this)
         embedInput.setText(prefs.embedModel)
         container.addView(embedInput)
+
+        val logRow = LinearLayout(this)
+        logRow.orientation = LinearLayout.HORIZONTAL
+        val viewLogButton = Button(this)
+        viewLogButton.text = "查看日志"
+        viewLogButton.setTextColor(getProperTextColor())
+        viewLogButton.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("最近日志")
+                .setMessage(AiLog.tail(80).ifEmpty { "还没有日志" })
+                .setPositiveButton("好", null)
+                .show()
+        }
+        logRow.addView(viewLogButton)
+        val shareLogButton = Button(this)
+        shareLogButton.text = "分享日志"
+        shareLogButton.setTextColor(getProperTextColor())
+        shareLogButton.setOnClickListener {
+            val file = AiLog.currentFile()
+            if (file == null || !file.exists()) {
+                toast("还没有日志文件")
+            } else {
+                try {
+                    val uri = androidx.core.content.FileProvider.getUriForFile(this, packageName + ".provider", file)
+                    val share = Intent(Intent.ACTION_SEND)
+                    share.type = "text/plain"
+                    share.putExtra(Intent.EXTRA_STREAM, uri)
+                    share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    startActivity(Intent.createChooser(share, "分享日志"))
+                } catch (e: Exception) {
+                    toast("分享失败：" + (e.message ?: ""))
+                }
+            }
+        }
+        logRow.addView(shareLogButton)
+        container.addView(logRow)
 
         AlertDialog.Builder(this)
             .setTitle("设置")
