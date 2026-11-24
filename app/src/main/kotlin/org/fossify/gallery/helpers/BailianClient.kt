@@ -88,6 +88,7 @@ class BailianClient(private val prefs: AiPrefs) {
             } catch (e: Exception) {
                 lastFailure = e
                 val message = e.message ?: ""
+                AiLog.w("http", "attempt " + (attempt + 1) + " failed: " + message.take(160))
                 if (message.startsWith("HTTP 429")) {
                     if (keyCount > 1) {
                         keyCursor++
@@ -127,6 +128,7 @@ class BailianClient(private val prefs: AiPrefs) {
         val text = BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { it.readText() }
         connection.disconnect()
         if (code !in 200..299) {
+            AiLog.w("http", "HTTP " + code + " " + url.substringAfterLast('/') + " :: " + text.take(200))
             throw IllegalStateException("HTTP " + code + ": " + text.take(300))
         }
         return JSONObject(text)
