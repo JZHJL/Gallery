@@ -405,9 +405,17 @@ class AiSearchActivity : SimpleActivity() {
                 } catch (e: Exception) {
                     FloatArray(0)
                 }
-                val dao = AiDatabase.getInstance(applicationContext).aiIndexDao()
-                val all = dao.getAll()
-                var ranked = AiMath.rank(queryVector, query, all)
+                val db = AiDatabase.getInstance(applicationContext)
+                val all = db.aiIndexDao().getAll()
+                val vectors = HashMap<String, FloatArray>()
+                for (row in db.aiVectorDao().getAll()) {
+                    vectors[row.uri] = AiMath.toFloats(row.vector)
+                }
+                val pairs = ArrayList<Pair<AiIndex, FloatArray>>(all.size)
+                for (row in all) {
+                    pairs.add(row to (vectors[row.uri] ?: FloatArray(0)))
+                }
+                var ranked = AiMath.rank(queryVector, query, pairs)
                 if (filter > 0) {
                     ranked = ranked.filter { matchesTimeFilter(it.first.path, filter) }
                 }
