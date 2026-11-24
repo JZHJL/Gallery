@@ -63,6 +63,28 @@ class AiPrefs(context: Context) {
         get() = prefs.getInt("accent_color", 0)
         set(value) = prefs.edit().putInt("accent_color", value).apply()
 
+    var tokensIn: Long
+        get() = prefs.getLong("tokens_in", 0L)
+        set(value) = prefs.edit().putLong("tokens_in", value).apply()
+
+    var tokensOut: Long
+        get() = prefs.getLong("tokens_out", 0L)
+        set(value) = prefs.edit().putLong("tokens_out", value).apply()
+
+    var tokensEmb: Long
+        get() = prefs.getLong("tokens_emb", 0L)
+        set(value) = prefs.edit().putLong("tokens_emb", value).apply()
+
+    fun addUsage(inputTokens: Int, outputTokens: Int, embeddingTokens: Int) {
+        tokensIn = tokensIn + inputTokens
+        tokensOut = tokensOut + outputTokens
+        tokensEmb = tokensEmb + embeddingTokens
+    }
+
+    fun estimatedCost(): Double {
+        return (tokensIn * 1.0 + tokensOut * 10.0 + tokensEmb * 0.5) / 1000000.0
+    }
+
     var searchHistory: List<String>
         get() = (prefs.getString("search_history", "") ?: "").split("\n").filter { it.isNotBlank() }
         set(value) = prefs.edit().putString("search_history", value.take(10).joinToString("\n")).apply()
