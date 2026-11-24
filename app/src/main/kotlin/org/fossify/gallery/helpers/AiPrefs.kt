@@ -39,6 +39,26 @@ class AiPrefs(context: Context) {
         get() = prefs.getString("embed_model", "text-embedding-v4") ?: "text-embedding-v4"
         set(value) = prefs.edit().putString("embed_model", value.trim()).apply()
 
+    var ballSize: Int
+        get() = prefs.getInt("ball_size", 56)
+        set(value) = prefs.edit().putInt("ball_size", value.coerceIn(36, 88)).apply()
+
+    var ballAlpha: Int
+        get() = prefs.getInt("ball_alpha", 255)
+        set(value) = prefs.edit().putInt("ball_alpha", value.coerceIn(110, 255)).apply()
+
+    var ballX: Int
+        get() = prefs.getInt("ball_x", -1)
+        set(value) = prefs.edit().putInt("ball_x", value).apply()
+
+    var ballY: Int
+        get() = prefs.getInt("ball_y", -1)
+        set(value) = prefs.edit().putInt("ball_y", value).apply()
+
+    var widgetText: String
+        get() = prefs.getString("widget_text", "🔍  搜照片") ?: "🔍  搜照片"
+        set(value) = prefs.edit().putString("widget_text", value.ifBlank { "🔍  搜照片" }).apply()
+
     var accentColor: Int
         get() = prefs.getInt("accent_color", 0)
         set(value) = prefs.edit().putInt("accent_color", value).apply()
