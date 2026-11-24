@@ -1,5 +1,6 @@
 package org.fossify.gallery.services
 
+import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -92,6 +93,7 @@ class FloatingBallService : Service() {
         layoutParams.x = (16 * density).toInt()
         layoutParams.y = (resources.displayMetrics.heightPixels * 0.35f).toInt()
 
+        var downTime = 0L
         var downX = 0f
         var downY = 0f
         var startX = 0
@@ -102,6 +104,7 @@ class FloatingBallService : Service() {
             val lp = view.layoutParams as WindowManager.LayoutParams
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    downTime = System.currentTimeMillis()
                     downX = event.rawX
                     downY = event.rawY
                     startX = lp.x
@@ -124,7 +127,12 @@ class FloatingBallService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!dragged) {
-                        openSearch()
+                        val longPress = System.currentTimeMillis() - downTime > 450
+                        if (longPress) {
+                            showMenu()
+                        } else {
+                            openSearch()
+                        }
                     }
                     true
                 }
@@ -138,6 +146,24 @@ class FloatingBallService : Service() {
             params = layoutParams
         } catch (e: Exception) {
             stopSelf()
+        }
+    }
+
+    private fun showMenu() {
+        try {
+            val dialog = AlertDialog.Builder(this)
+                .setItems(arrayOf("搜索照片", "继续索引 500 张", "关闭悬浮球")) { _, which ->
+                    when (which) {
+                        0 -> openSearch()
+                        1 -> AiIndexer.start(this, AiPrefs(this), 500)
+                        else -> stopSelf()
+                    }
+                }
+                .create()
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            dialog.show()
+        } catch (e: Exception) {
+            openSearch()
         }
     }
 
