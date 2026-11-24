@@ -162,9 +162,9 @@ object AiIndexer {
         )
     }
 
-    private fun backfillVectors(dao: AiIndexDao, client: BailianClient, prefs: AiPrefs) {
+    private fun backfillVectors(dao: AiIndexDao, vectorDao: AiVectorDao, client: BailianClient, prefs: AiPrefs) {
         val pending = try {
-            dao.getPendingVectors()
+            dao.getRowsMissingVector()
         } catch (e: Exception) {
             return
         }
@@ -181,7 +181,15 @@ object AiIndexer {
                 val vector = embedded.first
                 prefs.addUsage(0, 0, embedded.second)
                 if (vector.isNotEmpty()) {
-                    dao.upsert(row.copy(vector = AiMath.toBytes(vector), dim = vector.size, updatedAt = System.currentTimeMillis()))
+                    vectorDao.upsert(
+                        AiVector(
+                            uri = row.uri,
+                            vector = AiMath.toBytes(vector),
+                            dim = vector.size,
+                            model = prefs.embedModel,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
                 }
             } catch (e: Exception) {
                 AiLog.w("index", "backfill failed " + row.path + " :: " + (e.message ?: ""))
