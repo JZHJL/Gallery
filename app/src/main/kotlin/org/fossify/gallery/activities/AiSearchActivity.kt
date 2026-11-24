@@ -555,6 +555,55 @@ class AiSearchActivity : SimpleActivity() {
         container.addView(smallLabel("配色（悬浮球 / 小组件 / 高亮）", withAlpha(getProperTextColor(), 0.6f)))
         container.addView(colorRow)
 
+        container.addView(smallLabel("悬浮球大小", withAlpha(getProperTextColor(), 0.6f)))
+        var pickedSize = prefs.ballSize
+        val sizeRow = LinearLayout(this)
+        sizeRow.orientation = LinearLayout.HORIZONTAL
+        val sizePresets = intArrayOf(44, 56, 68)
+        val sizeLabels = arrayOf("小", "中", "大")
+
+        fun renderSizes() {
+            sizeRow.removeAllViews()
+            for (index in sizePresets.indices) {
+                val selected = pickedSize == sizePresets[index]
+                val chip = smallLabel(sizeLabels[index], if (selected) accent() else withAlpha(getProperTextColor(), 0.6f))
+                chip.setOnClickListener {
+                    pickedSize = sizePresets[index]
+                    renderSizes()
+                }
+                sizeRow.addView(chip)
+            }
+        }
+        renderSizes()
+        container.addView(sizeRow)
+
+        container.addView(smallLabel("悬浮球透明度", withAlpha(getProperTextColor(), 0.6f)))
+        var pickedAlpha = prefs.ballAlpha
+        val alphaRow = LinearLayout(this)
+        alphaRow.orientation = LinearLayout.HORIZONTAL
+        val alphaPresets = intArrayOf(255, 216, 178)
+        val alphaLabels = arrayOf("不透明", "85%", "70%")
+
+        fun renderAlphas() {
+            alphaRow.removeAllViews()
+            for (index in alphaPresets.indices) {
+                val selected = pickedAlpha == alphaPresets[index]
+                val chip = smallLabel(alphaLabels[index], if (selected) accent() else withAlpha(getProperTextColor(), 0.6f))
+                chip.setOnClickListener {
+                    pickedAlpha = alphaPresets[index]
+                    renderAlphas()
+                }
+                alphaRow.addView(chip)
+            }
+        }
+        renderAlphas()
+        container.addView(alphaRow)
+
+        container.addView(smallLabel("小组件文字", withAlpha(getProperTextColor(), 0.6f)))
+        val widgetInput = EditText(this)
+        widgetInput.setText(prefs.widgetText)
+        container.addView(widgetInput)
+
         container.addView(smallLabel("API Key（一行一个，遇到限流自动换下一个）", withAlpha(getProperTextColor(), 0.6f)))
         val keysInput = EditText(this)
         keysInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -580,6 +629,13 @@ class AiSearchActivity : SimpleActivity() {
                 prefs.visionModel = visionInput.text.toString()
                 prefs.embedModel = embedInput.text.toString()
                 prefs.accentColor = picked
+                prefs.ballSize = pickedSize
+                prefs.ballAlpha = pickedAlpha
+                prefs.widgetText = widgetInput.text.toString()
+                if (ballRunning) {
+                    stopService(Intent(this, FloatingBallService::class.java))
+                    startService(Intent(this, FloatingBallService::class.java))
+                }
                 toast("已保存")
             }
             .setNegativeButton("取消", null)
