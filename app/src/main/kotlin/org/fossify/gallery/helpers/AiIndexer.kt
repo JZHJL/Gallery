@@ -22,6 +22,8 @@ object AiIndexer {
         if (AiIndexState.running) {
             return
         }
+        AiLog.init(context)
+        AiLog.w("index", "start limit=" + limit + " model=" + prefs.visionModel + "/" + prefs.embedModel)
         AiIndexState.reset()
         AiIndexState.running = true
         val appContext = context.applicationContext
@@ -30,6 +32,7 @@ object AiIndexer {
             try {
                 val dao = AiDatabase.getInstance(appContext).aiIndexDao()
                 val targets = collectImages(appContext, limit, dao)
+                AiLog.w("index", "collected " + targets.size + " new targets (limit=" + limit + ")")
                 AiIndexState.total = targets.size
                 val client = BailianClient(prefs)
                 val done = AtomicInteger(0)
@@ -49,10 +52,12 @@ object AiIndexer {
                                     val jpeg = AiImagePrep.loadJpeg(appContext, Uri.parse(target.uri), MAX_SIDE)
                                     if (jpeg == null) {
                                         AiIndexState.skipCount++
+                                        AiLog.w("index", "skip unreadable " + target.path)
                                     } else {
                                         val description = client.describeImage(jpeg).first
                                         if (description.isEmpty()) {
                                             AiIndexState.failCount++
+                                            AiLog.w("index", "fail empty description " + target.path)
                                         } else {
                                             val vector = client.embedText(description)
                                             dao.upsert(
@@ -69,6 +74,7 @@ object AiIndexer {
                                                 )
                                             )
                                             AiIndexState.successCount++
+                                            AiLog.w("index", "ok " + target.path.substringAfterLast('/') + " dim=" + vector.size)
                                             AiIndexState.lastMessage = target.path.substringAfterLast('/')
                                         }
                                     }
@@ -77,6 +83,7 @@ object AiIndexer {
                         } catch (e: Exception) {
                             AiIndexState.failCount++
                             AiIndexState.lastError = e.message ?: e.javaClass.simpleName
+                            AiLog.w("index", "fail " + target.path + " :: " + (e.message ?: e.javaClass.simpleName))
                         } finally {
                             AiIndexState.indexed = done.incrementAndGet()
                             latch.countDown()
@@ -88,6 +95,7 @@ object AiIndexer {
                 AiIndexState.lastError = e.message ?: e.javaClass.simpleName
             } finally {
                 pool?.shutdown()
+                AiLog.w("index", "done success=" + AiIndexState.successCount + " fail=" + AiIndexState.failCount + " skip=" + AiIndexState.skipCount)
                 AiIndexState.running = false
             }
         }.start()
