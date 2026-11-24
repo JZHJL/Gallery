@@ -330,8 +330,10 @@ class AiSearchActivity : SimpleActivity() {
             progressBar.progress = AiIndexState.indexed
         }
 
-        statsText.text = "已索引 " + indexedCount + " / 媒体库 " + mediaTotal + " 张　·　估算 ¥" +
-            String.format(Locale.CHINA, "%.3f", indexedCount * COST_PER_PHOTO)
+        val cost = prefs.estimatedCost()
+        statsText.text = "已索引 " + indexedCount + " / 媒体库 " + mediaTotal + " 张　·　实际花费 ¥" +
+            String.format(Locale.CHINA, "%.4f", cost) +
+            "\n累计 token：" + prefs.tokensIn + " 输入 / " + prefs.tokensOut + " 输出 / " + prefs.tokensEmb + " 向量"
 
         val builder = StringBuilder()
         if (AiIndexState.running) {
