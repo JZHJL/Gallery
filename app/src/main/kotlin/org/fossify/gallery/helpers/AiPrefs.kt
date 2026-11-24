@@ -39,6 +39,10 @@ class AiPrefs(context: Context) {
         get() = prefs.getString("embed_model", "text-embedding-v4") ?: "text-embedding-v4"
         set(value) = prefs.edit().putString("embed_model", value.trim()).apply()
 
+    var accentColor: Int
+        get() = prefs.getInt("accent_color", 0)
+        set(value) = prefs.edit().putInt("accent_color", value).apply()
+
     var searchHistory: List<String>
         get() = (prefs.getString("search_history", "") ?: "").split("\n").filter { it.isNotBlank() }
         set(value) = prefs.edit().putString("search_history", value.take(10).joinToString("\n")).apply()
