@@ -92,5 +92,11 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: build-${{ github.run_number }}
-          body: "已用 JZH release keystore 签名"
+          body: |
+            **本 APK 直接由本仓库源码构建**：https://github.com/JZHJL/Gallery
+
+            本项目基于 [Fossify Gallery](https://github.com/FossifyOrg/Gallery) 修改，遵循 GPL-3.0，
+            许可证原文见仓库 `LICENSE`（未修改），修改说明见 [MODIFICATIONS.md](https://github.com/JZHJL/Gallery/blob/main/MODIFICATIONS.md)。
+
+            原始版权归 FossifyOrg 及其贡献者所有。
           files: ./albumsearch-release.apk
