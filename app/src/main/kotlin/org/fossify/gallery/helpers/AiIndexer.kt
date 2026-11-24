@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import org.fossify.gallery.databases.AiDatabase
 import org.fossify.gallery.databases.AiIndex
+import org.fossify.gallery.databases.AiIndexDao
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
@@ -28,7 +29,7 @@ object AiIndexer {
             var pool: java.util.concurrent.ExecutorService? = null
             try {
                 val dao = AiDatabase.getInstance(appContext).aiIndexDao()
-                val targets = collectImages(appContext, limit)
+                val targets = collectImages(appContext, limit, dao)
                 AiIndexState.total = targets.size
                 val client = BailianClient(prefs)
                 val done = AtomicInteger(0)
@@ -96,7 +97,7 @@ object AiIndexer {
         AiIndexState.cancelRequested = true
     }
 
-    private fun collectImages(context: Context, limit: Int): List<Target> {
+    private fun collectImages(context: Context, limit: Int, dao: AiIndexDao): List<Target> {
         val result = ArrayList<Target>()
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
@@ -111,6 +112,9 @@ object AiIndexer {
             while (cursor.moveToNext() && result.size < limit) {
                 val id = cursor.getLong(idIndex)
                 val contentUri = ContentUris.withAppendedId(collection, id).toString()
+                if (dao.getByUri(contentUri) != null) {
+                    continue
+                }
                 val path = if (dataIndex >= 0) {
                     cursor.getString(dataIndex) ?: contentUri
                 } else {
