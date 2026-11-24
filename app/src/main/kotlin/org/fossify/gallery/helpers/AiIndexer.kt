@@ -37,40 +37,42 @@ object AiIndexer {
                 for (target in targets) {
                     pool.execute {
                         try {
-                            if (AiIndexState.cancelRequested) {
-                                done.incrementAndGet()
-                                return@execute
+                            when {
+                                AiIndexState.cancelRequested -> {
+                                    AiIndexState.skipCount++
+                                }
+                                dao.getByUri(target.uri) != null -> {
+                                    AiIndexState.skipCount++
+                                }
+                                else -> {
+                                    val jpeg = AiImagePrep.loadJpeg(appContext, Uri.parse(target.uri), MAX_SIDE)
+                                    if (jpeg == null) {
+                                        AiIndexState.skipCount++
+                                    } else {
+                                        val description = client.describeImage(jpeg).first
+                                        if (description.isEmpty()) {
+                                            AiIndexState.failCount++
+                                        } else {
+                                            val vector = client.embedText(description)
+                                            dao.upsert(
+                                                AiIndex(
+                                                    uri = target.uri,
+                                                    path = target.path,
+                                                    description = description,
+                                                    ocrText = description,
+                                                    vector = AiMath.toBytes(vector),
+                                                    dim = vector.size,
+                                                    model = prefs.visionModel,
+                                                    sizeBytes = target.size,
+                                                    updatedAt = System.currentTimeMillis()
+                                                )
+                                            )
+                                            AiIndexState.successCount++
+                                            AiIndexState.lastMessage = target.path.substringAfterLast('/')
+                                        }
+                                    }
+                                }
                             }
-                            if (dao.getByUri(target.uri) != null) {
-                                done.incrementAndGet()
-                                return@execute
-                            }
-                            val jpeg = AiImagePrep.loadJpeg(appContext, Uri.parse(target.uri), MAX_SIDE)
-                            if (jpeg == null) {
-                                done.incrementAndGet()
-                                return@execute
-                            }
-                            val description = client.describeImage(jpeg).first
-                            if (description.isEmpty()) {
-                                done.incrementAndGet()
-                                return@execute
-                            }
-                            val vector = client.embedText(description)
-                            dao.upsert(
-                                AiIndex(
-                                    uri = target.uri,
-                                    path = target.path,
-                                    description = description,
-                                    ocrText = description,
-                                    vector = AiMath.toBytes(vector),
-                                    dim = vector.size,
-                                    model = prefs.visionModel,
-                                    sizeBytes = target.size,
-                                    updatedAt = System.currentTimeMillis()
-                                )
-                            )
-                            AiIndexState.successCount++
-                            AiIndexState.lastMessage = target.path.substringAfterLast('/')
                         } catch (e: Exception) {
                             AiIndexState.failCount++
                             AiIndexState.lastError = e.message ?: e.javaClass.simpleName
