@@ -303,4 +303,5 @@
         Haven't found some strings? There's more at
         https://github.com/FossifyOrg/Commons/tree/master/commons/src/main/res
     -->
+    <string name="copyright">v %1$s\n基于 Fossify Gallery（GPL-3.0）修改 · 原始版权 © Fossify %2$d\n修改版源码：github.com/JZHJL/Gallery</string>
 </resources>
