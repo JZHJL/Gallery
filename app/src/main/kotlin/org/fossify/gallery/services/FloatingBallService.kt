@@ -17,6 +17,8 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import org.fossify.gallery.activities.SearchActivity
+import org.fossify.gallery.helpers.AiIndexer
+import org.fossify.gallery.helpers.AiPrefs
 
 class FloatingBallService : Service() {
 
