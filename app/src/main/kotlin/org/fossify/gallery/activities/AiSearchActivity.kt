@@ -98,6 +98,8 @@ class AiSearchActivity : SimpleActivity() {
         return Color.argb(Math.round(255 * factor), Color.red(color), Color.green(color), Color.blue(color))
     }
 
+    private fun accent(): Int = if (prefs.accentColor != 0) prefs.accentColor else getProperPrimaryColor()
+
     private fun buildUi(): View {
         val textColor = getProperTextColor()
         val background = getProperBackgroundColor()
@@ -252,7 +254,7 @@ class AiSearchActivity : SimpleActivity() {
         val labels = arrayOf("不限时间", "近一年", "近一月")
         for (index in labels.indices) {
             val selected = timeFilter == index
-            val chip = smallLabel(labels[index], if (selected) getProperPrimaryColor() else withAlpha(getProperTextColor(), 0.55f))
+            val chip = smallLabel(labels[index], if (selected) accent() else withAlpha(getProperTextColor(), 0.55f))
             chip.setOnClickListener {
                 timeFilter = index
                 renderFilters()
@@ -512,6 +514,47 @@ class AiSearchActivity : SimpleActivity() {
         container.orientation = LinearLayout.VERTICAL
         container.setPadding(dp(20), dp(8), dp(20), 0)
 
+        var picked = prefs.accentColor
+        val presets = intArrayOf(0, 0xFF4C8DFF.toInt(), 0xFF2E7D32.toInt(), 0xFF7B1FA2.toInt(), 0xFFEF6C00.toInt(), 0xFFC2185B.toInt(), 0xFF455A64.toInt())
+        val colorRow = LinearLayout(this)
+        colorRow.orientation = LinearLayout.HORIZONTAL
+        colorRow.gravity = Gravity.CENTER_VERTICAL
+
+        fun renderSwatches() {
+            colorRow.removeAllViews()
+            val follow = TextView(this)
+            follow.text = if (picked == 0) "跟随主题 ✓" else "跟随主题"
+            follow.textSize = 12.5f
+            follow.setTextColor(if (picked == 0) accent() else withAlpha(getProperTextColor(), 0.6f))
+            follow.setPadding(dp(6), dp(6), dp(12), dp(6))
+            follow.setOnClickListener {
+                picked = 0
+                renderSwatches()
+            }
+            colorRow.addView(follow)
+            for (index in 1 until presets.size) {
+                val swatch = View(this)
+                val shape = GradientDrawable()
+                shape.shape = GradientDrawable.OVAL
+                shape.setColor(presets[index])
+                if (picked == presets[index]) {
+                    shape.setStroke(dp(3), getProperTextColor())
+                }
+                swatch.background = shape
+                val params = LinearLayout.LayoutParams(dp(26), dp(26))
+                params.marginEnd = dp(8)
+                swatch.layoutParams = params
+                swatch.setOnClickListener {
+                    picked = presets[index]
+                    renderSwatches()
+                }
+                colorRow.addView(swatch)
+            }
+        }
+        renderSwatches()
+        container.addView(smallLabel("配色（悬浮球 / 小组件 / 高亮）", withAlpha(getProperTextColor(), 0.6f)))
+        container.addView(colorRow)
+
         container.addView(smallLabel("API Key（一行一个，遇到限流自动换下一个）", withAlpha(getProperTextColor(), 0.6f)))
         val keysInput = EditText(this)
         keysInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -536,6 +579,7 @@ class AiSearchActivity : SimpleActivity() {
                 prefs.apiKeys = keysInput.text.toString().split("\n")
                 prefs.visionModel = visionInput.text.toString()
                 prefs.embedModel = embedInput.text.toString()
+                prefs.accentColor = picked
                 toast("已保存")
             }
             .setNegativeButton("取消", null)
