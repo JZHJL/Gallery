@@ -336,11 +336,14 @@ class AiSearchActivity : SimpleActivity() {
             builder.append("进度 ").append(AiIndexState.indexed).append("/").append(AiIndexState.total)
             builder.append("　成功 ").append(AiIndexState.successCount)
             builder.append("　失败 ").append(AiIndexState.failCount)
+            builder.append("　跳过 ").append(AiIndexState.skipCount)
             if (AiIndexState.lastMessage.isNotEmpty()) {
                 builder.append("\n正在处理：").append(AiIndexState.lastMessage)
             }
         } else if (AiIndexState.indexed > 0) {
-            builder.append("上次任务：成功 ").append(AiIndexState.successCount).append("，失败 ").append(AiIndexState.failCount)
+            builder.append("上次任务：成功 ").append(AiIndexState.successCount)
+                .append("，失败 ").append(AiIndexState.failCount)
+                .append("，跳过 ").append(AiIndexState.skipCount)
         } else {
             builder.append("先点「建立索引」让 AI 认识你的相册，再输入一句话搜索。")
         }
